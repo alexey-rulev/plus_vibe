@@ -23,7 +23,7 @@ def _parse_lattice(lat):
                  [lat["c"][0], lat["c"][1], lat["c"][2]]],
                 dtype=float
             )
-        # sometimes phono YAML stores caps or different keys — try to be forgiving
+        # forgiving case-insensitive keys
         keys = {k.lower(): k for k in lat.keys()}
         if all(k in keys for k in ("a","b","c")):
             return np.array(
@@ -51,7 +51,7 @@ def parse_band_yaml(data):
     Parse Phonopy band.yaml into a structured dict for plotting & animation.
     Returns (phonon, meta) where:
       phonon: {
-        'qpoints': list of distances,
+        'qpoints': list of distances (cumulative abscissa),
         'qpoints_frac': list of fractional q (in recip. lattice units),
         'frequencies': array [nq, nbranches],
         'eigenvectors': nested list [nq][nbranches][natoms][3] (complex) if present,
@@ -70,12 +70,11 @@ def parse_band_yaml(data):
     atoms = []
     if "points" in data and isinstance(data["points"], list):
         for p in data["points"]:
-            # Some generators may omit mass/symbol/coordinates
-            frac = np.array(p.get("coordinates", [0,0,0]), dtype=float)
+            frac = np.array(p.get("coordinates", [0, 0, 0]), dtype=float)
             atoms.append({
                 "symbol": p.get("symbol", "X"),
                 "frac": frac,
-                "mass": float(p.get("mass", 0.0))
+                "mass": float(p.get("mass", 0.0)),
             })
 
     qpoints_frac = []
@@ -91,22 +90,21 @@ def parse_band_yaml(data):
 
     nbranches = None
     for iq, q in enumerate(phonon_list):
-        # Some files use 'q-position', some might use a fractional tag; support both.
+        # q-point
         qp = q.get("q-position", q.get("q-position-frac"))
         if qp is None:
             raise ValueError(f"Missing 'q-position' at phonon entry {iq}.")
         qpoints_frac.append(np.array(qp, dtype=float))
 
-        # Phonopy typically provides cumulative 'distance'. If absent, fall back to index.
+        # cumulative distance; if missing, use sequential index
         distances.append(float(q.get("distance", iq)))
 
+        # bands/frequencies
         bands = q.get("band")
         if not bands:
             raise ValueError(f"Missing 'band' data at phonon entry {iq}.")
         if nbranches is None:
             nbranches = len(bands)
-
-        # frequencies
         freqs = [float(b.get("frequency", 0.0)) for b in bands]
         freqs_list.append(freqs)
 
@@ -117,8 +115,7 @@ def parse_band_yaml(data):
             for b in bands:
                 vecs = []
                 for at in b["eigenvector"]:
-                    # each 'at' is a 3-vector of [real, imag] pairs
-                    v = [_complex_from_pair(comp) for comp in at]
+                    v = [_complex_from_pair(comp) for comp in at]  # [3] complex
                     vecs.append(v)
                 eig_per_q.append(vecs)
             eigs_all.append(eig_per_q)
@@ -129,20 +126,24 @@ def parse_band_yaml(data):
 
     freqs_arr = np.array(freqs_list)  # [nq, nbranches]
 
+    # main payload
     out_ph = {
         "qpoints": distances,
         "qpoints_frac": qpoints_frac,
         "frequencies": freqs_arr,
-        "nbranches": freqs_arr.shape[1],
+        "nbranches": int(freqs_arr.shape[1]),
         "has_eigenvectors": has_eigs,
     }
+    # backward-compat alias for older plotters
+    out_ph["distances"] = out_ph["qpoints"]
+
     if has_eigs:
         out_ph["eigenvectors"] = eigs_all
 
     meta = {
         "lattice": lattice,
-        "atoms": atoms,   # can be empty if not present in YAML; animation needs it + lattice
-        "labels": labels
+        "atoms": atoms,    # can be empty if not present in YAML; animation needs it + lattice
+        "labels": labels,
     }
     return out_ph, meta
 
@@ -154,14 +155,14 @@ def build_kpath_ticks(distances, labels):
             lab = str(labels[i])
             lab = (lab.replace("GAMMA", "Γ")
                       .replace("\\Gamma", "Γ")
+                      .replace("$\\Gamma$", "Γ")
                       .replace("$\\Gamma$", "Γ"))
             xp.append(d); xl.append(lab)
-    # Optionally include first/last (blank) ticks for nicer framing
     if distances:
         if 0 not in labels:
             xp = [distances[0]] + xp
             xl = ([""] if not xl else [xl[0]]) + xl
-        if (len(distances)-1) not in labels:
+        if (len(distances) - 1) not in labels:
             xp = xp + [distances[-1]]
             xl = xl + [""]
     return xp, xl
