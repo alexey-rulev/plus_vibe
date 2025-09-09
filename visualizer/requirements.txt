@@ -3,3 +3,4 @@ streamlit>=1.36
 pyyaml
 plotly>=5.19
 numpy
+nglview

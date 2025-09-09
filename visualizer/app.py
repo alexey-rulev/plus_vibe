@@ -1,10 +1,9 @@
 
-import io
 import yaml
 import numpy as np
 import streamlit as st
 from phonon_parser import parse_band_yaml
-from viz import make_phonon_band_figure, make_mode_animation_figure, build_supercell
+from viz import make_phonon_band_figure, make_mode_animation_widget, build_supercell
 
 st.set_page_config(page_title="Phonon (Phonopy) Visualizer", layout="wide")
 st.title("📈 Phonon Visualizer (Phonopy band.yaml)")
@@ -16,7 +15,6 @@ with st.sidebar:
     supercell = st.slider("Supercell repetitions (integer)", 1, 3, 1)
     amp = st.slider("Amplitude (Å)", 0.0, 0.6, 0.2, 0.02)
     frames = st.slider("Animation frames per period", 10, 60, 24, 2)
-    show_vectors = st.checkbox("Show eigenvector arrows", value=False)
 
 if not uploaded:
     st.info("Drop a **band.yaml** here to begin.")
@@ -51,7 +49,7 @@ with col2:
 
     if phonon.get("has_eigenvectors", False):
         R, species, lattice = build_supercell(meta, reps=(supercell, supercell, supercell))
-        fig_anim = make_mode_animation_figure(
+        view = make_mode_animation_widget(
             R=R,
             species=species,
             lattice=lattice,
@@ -59,8 +57,7 @@ with col2:
             qvec=phonon["qpoints_frac"][q_idx],
             amp=amp,
             steps=frames,
-            show_vectors=show_vectors,
         )
-        st.plotly_chart(fig_anim, use_container_width=True)
+        st.components.v1.html(view._repr_html_(), height=500)
     else:
         st.info("Band plot shown on the left. Upload a file with eigenvectors to animate modes.")
