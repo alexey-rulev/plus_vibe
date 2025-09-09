@@ -1,0 +1,60 @@
+ &CONTROL
+   prefix          =  'basno3'
+   outdir          =  './tmp'
+   calculation     =  'vc-relax'
+   pseudo_dir      =  '.'
+   etot_conv_thr   = 1.0E-10
+   forc_conv_thr   = 1.0E-7
+   nstep = 200
+ /
+
+ &SYSTEM
+   ecutrho         =  600
+   ecutwfc         =  80
+   ibrav           =  0
+   nat             =  5
+   ntyp            =  3
+   occupations     = 'smearing'
+   smearing        = 'gaussian'
+   degauss         =  0.01
+   
+ /
+
+ &ELECTRONS
+   conv_thr        =  1.0E-12
+   mixing_beta     =  0.2
+   electron_maxstep = 200
+   adaptive_thr    = .TRUE.
+ /
+ &IONS
+   upscale = 100.0
+ /
+ 
+ &CELL
+ /
+
+
+ATOMIC_SPECIES 
+  Ba    137.327   Ba.pbe-spn-kjpaw_psl.1.0.0.UPF 
+  Sn    118.71   Sn_pbe_v1.uspp.F.UPF 
+  O    15.999   O.pbe-n-kjpaw_psl.0.1.UPF 
+
+
+CELL_PARAMETERS angstrom
+      4.18       0.0000000000       0.0000000000
+      0.0000000000       4.18       0.0000000000
+      0.0000000000       0.0000000000       4.18
+
+ATOMIC_POSITIONS crystal
+Sn            0.0000000000        0.0000000000        0.0000000000
+O             0.0000000000        0.5        0.0000000000
+O             0.0000000000        0.0000000000        0.5
+O             0.5        0.0000000000        0.0000000000
+Ba            0.5        0.5        0.5
+
+K_POINTS automatic
+14 14 14  1 1 1 
+
+HUBBARD (ortho-atomic)
+
+U   O-2p    8
