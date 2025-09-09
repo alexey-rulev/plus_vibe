@@ -154,7 +154,7 @@ def make_mode_animation_figure(R, species, lattice, eigenvectors, qvec, amp=0.2,
     fig = go.Figure(data=frames_list[0].data, frames=frames_list)
 
     anim_opts = dict(
-        frame={"duration": 50, "redraw": True},
+        frame={"duration": 50, "redraw": False},
         transition={"duration": 0},
         fromcurrent=True,
         mode="immediate",
@@ -176,7 +176,7 @@ def make_mode_animation_figure(R, species, lattice, eigenvectors, qvec, amp=0.2,
                     {
                         "label": "Pause",
                         "method": "animate",
-                        "args": [[None], {"mode": "immediate", "frame": {"duration": 0, "redraw": False}}],
+                        "args": [[None], {"mode": "immediate", "frame": {"duration": 0, "redraw": False}, "transition": {"duration": 0}}],
                     },
                 ],
             }
