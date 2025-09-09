@@ -152,13 +152,36 @@ def make_mode_animation_figure(R, species, lattice, eigenvectors, qvec, amp=0.2,
         frames_list.append(go.Frame(data=data, name=f"f{t}"))
 
     fig = go.Figure(data=frames_list[0].data, frames=frames_list)
+
+    anim_opts = dict(
+        frame={"duration": 50, "redraw": True},
+        transition={"duration": 0},
+        fromcurrent=True,
+        mode="immediate",
+        loop=True,
+    )
+
     fig.update_layout(
-        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False), aspectmode="data"),
-        updatemenus=[{"type": "buttons", "buttons": [
-            {"label": "Play", "method": "animate", "args": [None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True}]},
-            {"label": "Pause", "method": "animate", "args": [[None], {"mode": "immediate", "frame": {"duration": 0, "redraw": False}}]}
-        ]}],
+        scene=dict(
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(visible=False),
+            aspectmode="data",
+        ),
+        updatemenus=[
+            {
+                "type": "buttons",
+                "buttons": [
+                    {"label": "Play", "method": "animate", "args": [None, anim_opts]},
+                    {
+                        "label": "Pause",
+                        "method": "animate",
+                        "args": [[None], {"mode": "immediate", "frame": {"duration": 0, "redraw": False}}],
+                    },
+                ],
+            }
+        ],
         margin=dict(l=0, r=0, t=10, b=0),
-        showlegend=False
+        showlegend=False,
     )
     return fig
