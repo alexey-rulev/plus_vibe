@@ -137,11 +137,20 @@ def make_mode_animation_widget(R, species, lattice, eigenvectors, qvec, amp=0.2,
         Rt = R + disp_t
         pdbs.append(_pdb_from_atoms(Rt, species, lattice))
 
-    traj_cls = getattr(nv, "TextStructureTrajectory", None)
+    traj_cls = None
+    for mod in (nv, getattr(nv, "trajectory", None)):
+        if mod is None:
+            continue
+        for name in ("TextStructureTrajectory", "TextTrajectory"):
+            traj_cls = getattr(mod, name, None)
+            if traj_cls is not None:
+                break
+        if traj_cls is not None:
+            break
     if traj_cls is None:
-        traj_cls = getattr(nv, "TextTrajectory", None)
-    if traj_cls is None:
-        raise AttributeError("nglview installation lacks TextStructureTrajectory or TextTrajectory")
+        raise AttributeError(
+            "nglview installation lacks TextStructureTrajectory or TextTrajectory"
+        )
     traj = traj_cls(pdbs, ext="pdb")
     view = nv.show_trajectory(traj)
     view.add_representation("ball+stick")
