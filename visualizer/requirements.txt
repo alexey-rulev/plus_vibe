@@ -6,3 +6,4 @@ ipywidgets>=8.0,<9.0
 nglview>=3.0.8,<4.0
 ase>=3.22
 streamlit-plotly-events>=0.0.6
+phonopy
