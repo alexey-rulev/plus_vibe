@@ -3,12 +3,9 @@ import plotly.graph_objects as go
 
 # ---------------- Band figure ----------------
 
-def make_phonon_band_figure(phonon, meta=None):
-    """
-    Plot phonon bands vs k-point INDEX (0..N-1), not distance.
-    Labels in meta['labels'] are placed at their q-point indices.
-    """
-    y = np.asarray(phonon["frequencies"], float)  # [nq, nb]
+def make_phonon_band_figure(band):
+    """Plot phonon bands vs k-point index using a Phonopy BandStructure."""
+    y = np.asarray(band.frequencies, float)  # [nq, nb]
     nq, nb = y.shape
     x = np.arange(nq, dtype=int)  # k-point index
 
@@ -16,15 +13,15 @@ def make_phonon_band_figure(phonon, meta=None):
     for b in range(nb):
         fig.add_trace(go.Scatter(x=x, y=y[:, b], mode="lines", showlegend=False))
 
-    labels = (meta or {}).get("labels", {})
+    labels = getattr(band, "labels", None)
     if labels:
-        idxs = sorted(int(i) for i in labels.keys() if 0 <= int(i) < nq)
+        idxs = [i for i, lab in enumerate(labels) if lab]
         tickvals, ticktext = [], []
         for i in idxs:
             lab = str(labels[i]).replace("GAMMA", "Γ").replace("\\Gamma", "Γ").replace("$\\Gamma$", "Γ")
-            tickvals.append(i); ticktext.append(lab)
+            tickvals.append(i)
+            ticktext.append(lab)
         fig.update_xaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext, title_text="k-point index")
-        # Optional: faint vertical separators at labeled points
         for i in idxs:
             fig.add_vline(x=i, line_width=1, line_dash="dot")
     else:
@@ -36,17 +33,12 @@ def make_phonon_band_figure(phonon, meta=None):
 
 # ---------------- Supercell builder ----------------
 
-def build_supercell(meta, reps=(1, 1, 1)):
-    """
-    Returns (R, species, lattice).
-
-    meta must contain:
-      - 'lattice' : (3,3) cell vectors (Å)
-      - 'atoms' : list of { 'symbol': str, 'frac': (3,) }
-    """
-    lattice = np.asarray(meta["lattice"], float)
-    base = np.array([a["frac"] for a in meta["atoms"]], dtype=float)
-    species = [a["symbol"] for a in meta["atoms"]]
+def build_supercell(phonon, reps=(1, 1, 1)):
+    """Return supercell cartesian coordinates, species and lattice."""
+    cell = phonon.unitcell
+    lattice = np.asarray(cell.cell, float)
+    base = np.asarray(cell.scaled_positions, float)
+    species = list(cell.symbols)
 
     reps = tuple(int(x) for x in reps)
     all_frac, all_species = [], []
@@ -58,7 +50,7 @@ def build_supercell(meta, reps=(1, 1, 1)):
                     all_frac.append((p + shift) / reps)
                     all_species.append(s)
     all_frac = np.vstack(all_frac)
-    R = all_frac @ lattice  # [N,3]
+    R = all_frac @ lattice
     return R, all_species, lattice
 
 # ---------------- PDB helpers ----------------
