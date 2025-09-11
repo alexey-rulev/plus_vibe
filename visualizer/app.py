@@ -1,7 +1,5 @@
-import yaml
-import numpy as np
 import streamlit as st
-from phonon_parser import parse_band_yaml
+from phonon_parser import load_band_yaml
 from viz import (
     make_phonon_band_figure,
     build_supercell,
@@ -30,16 +28,8 @@ if not uploaded:
     st.info("Drop a **band.yaml** here to begin.")
     st.stop()
 
-# Load YAML
 try:
-    data = yaml.safe_load(uploaded)
-except Exception as e:
-    st.error(f"Failed to parse YAML: {e}")
-    st.stop()
-
-# Parse to structured dicts
-try:
-    phonon, meta = parse_band_yaml(data)
+    phonon, band = load_band_yaml(uploaded)
 except Exception as e:
     st.exception(e)
     st.stop()
@@ -48,17 +38,17 @@ col1, col2 = st.columns([1.2, 1.0], gap="large")
 
 # Band plot (k-point index on x-axis)
 with col1:
-    fig_band = make_phonon_band_figure(phonon, meta)
+    fig_band = make_phonon_band_figure(band)
     st.plotly_chart(fig_band, use_container_width=True)
 
 # Mode animation
 with col2:
     st.subheader("Animate a mode")
-    if not phonon.get("has_eigenvectors", False):
+    if band.eigenvectors is None:
         st.warning("This file lacks eigenvectors. Re-run Phonopy with `--eigenvectors` (or `EIGENVECTORS = .TRUE.`).")
 
-    nq = len(phonon["qpoints"])
-    nb = phonon["nbranches"]
+    nq = len(band.qpoints)
+    nb = band.frequencies.shape[1]
 
     # Choose how to enter indices
     entry_mode = st.radio(
@@ -74,12 +64,12 @@ with col2:
         q_idx = st.number_input("q-point index", min_value=0, max_value=nq - 1, value=min(10, nq - 1), step=1)
         b_idx = st.number_input("Branch index (0 = acoustic)", min_value=0, max_value=nb - 1, value=min(3, nb - 1), step=1)
 
-    if phonon.get("has_eigenvectors", False) and meta.get("atoms"):
+    if band.eigenvectors is not None:
         # Build supercell geometry
-        R, species, lattice = build_supercell(meta, reps=(supercell, supercell, supercell))
+        R, species, lattice = build_supercell(phonon, reps=(supercell, supercell, supercell))
 
         # Mass list replicated to the supercell order (mass-weighted displacement 1/sqrt(m))
-        base_masses = [a["mass"] for a in meta["atoms"]]
+        base_masses = list(phonon.unitcell.masses)
         masses = base_masses * (supercell ** 3)
 
         try:
@@ -87,8 +77,8 @@ with col2:
                 R=R,
                 species=species,
                 lattice=lattice,
-                eigenvectors=phonon["eigenvectors"][q_idx][b_idx],
-                qvec=phonon["qpoints_frac"][q_idx],
+                eigenvectors=band.eigenvectors[q_idx][b_idx],
+                qvec=band.qpoints[q_idx],
                 masses=masses,
                 amp=amp,               # now dimensionless scale factor (larger default)
                 steps=frames,
@@ -99,5 +89,3 @@ with col2:
             st.caption("Mass-weighted animation (displacements scaled by 1/√m and a dimensionless amplitude). Rendered with pure NGL.js for Streamlit.")
         except Exception as e:
             st.exception(e)
-    elif phonon.get("has_eigenvectors", False):
-        st.info("YAML lacks atom list/lattice — cannot animate. Ensure `band.yaml` contains `lattice` and `points` entries.")
