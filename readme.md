@@ -1,4 +1,4 @@
-this is a readme file for the project plus_vibe
+This is a work in progress.
 
 # Phonon Projection Streamlit App
 
