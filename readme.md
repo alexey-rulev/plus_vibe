@@ -1,5 +1,7 @@
 This is a work in progress.
 
+Currently the working code is in ts.ipynb (test branch)
+
 # Phonon Projection Streamlit App
 
 Loads three `band.yaml` files (unit-cell with eigenvectors, supercell equilibrium, supercell TS),
