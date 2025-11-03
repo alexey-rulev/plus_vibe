@@ -6,6 +6,8 @@ from viz import (
     make_phonon_band_figure,
     build_supercell,
     make_mode_animation_html,
+    compute_mode_displacement,
+    make_poscar_with_displacements,
 )
 
 st.set_page_config(page_title="Phonon (Phonopy) Visualizer", layout="wide")
@@ -83,6 +85,16 @@ with col2:
         masses = base_masses * (supercell ** 3)
 
         try:
+            displacement = compute_mode_displacement(
+                R=R,
+                eigenvectors=phonon["eigenvectors"][q_idx][b_idx],
+                qvec=phonon["qpoints_frac"][q_idx],
+                lattice=lattice,
+                masses=masses,
+                amp=amp,
+            )
+            displaced_coords = R + displacement
+
             html = make_mode_animation_html(
                 R=R,
                 species=species,
@@ -97,6 +109,24 @@ with col2:
             )
             st.components.v1.html(html, height=540, scrolling=False)
             st.caption("Mass-weighted animation (displacements scaled by 1/√m and a dimensionless amplitude). Rendered with pure NGL.js for Streamlit.")
+
+            poscar_comment = (
+                f"Phonon Visualizer q-index={q_idx} branch={b_idx} supercell={supercell} amplitude={amp}"
+            )
+            poscar_data = make_poscar_with_displacements(
+                lattice=lattice,
+                species=species,
+                coords_cart=displaced_coords,
+                disp_cart=displacement,
+                comment=poscar_comment,
+            )
+            file_name = f"phonon_mode_q{q_idx}_b{b_idx}_sc{supercell}.vasp"
+            st.download_button(
+                "💾 Download displaced configuration (.vasp)",
+                data=poscar_data,
+                file_name=file_name,
+                mime="text/plain",
+            )
         except Exception as e:
             st.exception(e)
     elif phonon.get("has_eigenvectors", False):
