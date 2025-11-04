@@ -10,8 +10,11 @@ def _parse_lattice(lat):
     Accepts either:
       - dict: {'a':[...], 'b':[...], 'c':[...]}
       - list/tuple: [[...],[...],[...]]
-    Returns a (3,3) numpy array or None if not available/invalid.
+    Returns a (3,3) numpy array in Angstrom or None if not available/invalid.
+    Converts from atomic units (Bohr) to Angstrom.
     """
+    BOHR_TO_ANGSTROM = 0.529177210903
+    
     if lat is None:
         return None
     # dict-style
@@ -22,7 +25,7 @@ def _parse_lattice(lat):
                  [lat["b"][0], lat["b"][1], lat["b"][2]],
                  [lat["c"][0], lat["c"][1], lat["c"][2]]],
                 dtype=float
-            )
+            ) * BOHR_TO_ANGSTROM
         # forgiving case-insensitive keys
         keys = {k.lower(): k for k in lat.keys()}
         if all(k in keys for k in ("a","b","c")):
@@ -31,7 +34,7 @@ def _parse_lattice(lat):
                  [lat[keys["b"]][0], lat[keys["b"]][1], lat[keys["b"]][2]],
                  [lat[keys["c"]][0], lat[keys["c"]][1], lat[keys["c"]][2]]],
                 dtype=float
-            )
+            ) * BOHR_TO_ANGSTROM
         return None
     # list/tuple-style
     if isinstance(lat, (list, tuple)) and len(lat) == 3:
@@ -41,7 +44,7 @@ def _parse_lattice(lat):
                  [float(lat[1][0]), float(lat[1][1]), float(lat[1][2])],
                  [float(lat[2][0]), float(lat[2][1]), float(lat[2][2])]],
                 dtype=float
-            )
+            ) * BOHR_TO_ANGSTROM
         except Exception:
             return None
     return None
