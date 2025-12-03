@@ -1,31 +1,55 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from .phonon_parser import build_kpath_ticks
 
-def plot_bands_with_projection(uc_ph: dict, uc_meta: dict, A: np.ndarray, amp_scale: float = 800.0):
-    distances = uc_ph["qpoints"]
-    freqs = uc_ph["frequencies"]  # [nq, nbranches]
-    labels = uc_meta.get("labels", {})
-    xp, xl = build_kpath_ticks(distances, labels)
+THZ_TO_MEV = 4.13567
+MEV_TO_CM1 = 8.06554
 
-    nq, nb = freqs.shape
-    sizes = (A / (A.max() + 1e-12)) * amp_scale
 
-    fig, ax = plt.subplots(figsize=(9,6))
-    for b in range(nb):
-        ax.plot(distances, freqs[:, b], lw=1.0, alpha=0.7, zorder=1)
+def _auto_kpath_ticks(qpoints_frac: list[list[float]]):
+    ticks = set()
+    for i in range(len(qpoints_frac) - 1):
+        if np.allclose(qpoints_frac[i], qpoints_frac[i + 1]):
+            ticks.add(i)
+    ticks.update({0, len(qpoints_frac) - 1})
+    ticks = sorted(ticks)
+    labels = [f"({qpoints_frac[i][0]:.1f},{qpoints_frac[i][1]:.1f},{qpoints_frac[i][2]:.1f})" for i in ticks]
+    return ticks, labels
 
-    for b in range(nb):
-        ax.scatter(distances, freqs[:, b], s=sizes[:, b], alpha=0.6, zorder=2)
 
-    if xp:
-        ax.set_xticks(xp, xl)
-        for x in xp:
-            ax.axvline(x, color='k', lw=0.5, alpha=0.3)
+def _sizes_from_projections(proj: np.ndarray, min_size: float = 0.0, max_size: float = 200.0, power: float = 1.0) -> np.ndarray:
+    proj = (proj - proj.min()) / max(proj.max() - proj.min(), 1e-12)
+    return min_size + (proj ** power) * (max_size - min_size)
 
-    ax.set_xlabel("q-path")
-    ax.set_ylabel("Frequency (THz)")
-    ax.set_title("Unit-cell band structure with TS displacement projection")
-    ax.grid(alpha=0.15)
+
+def plot_bands_with_projection(uc_ph: dict, projections: np.ndarray, amp_scale: float = 200.0, square: bool = False):
+    freqs_thz = np.asarray(uc_ph["frequencies"], dtype=float)
+    freqs_mev = freqs_thz * THZ_TO_MEV
+    print(uc_ph["qpoints"])
+    q = np.asarray(uc_ph["qpoints"], dtype=float)
+    print(q)
+    qfrac = uc_ph.get("qpoints_frac", [])
+
+    proj_vals = np.asarray(projections, dtype=float)
+    power = 2.0 if square else 1.0
+
+    sizes = _sizes_from_projections(proj_vals, max_size=amp_scale, power=power)
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for b in range(freqs_mev.shape[1]):
+        ax.plot(q, freqs_mev[:, b], color="black", lw=1.0)
+        ax.scatter(q, freqs_mev[:, b], s=sizes[:, b], color="#2ECC71", alpha=1, edgecolors='none')
+
+    if qfrac:
+        ticks, labels = _auto_kpath_ticks(qfrac)
+        ax.set_xticks(q[ticks], labels, rotation=45)
+
+    ax.set_xlabel("q-point")
+    ax.set_ylabel("Energy, meV")
+    ax.set_xlim(q.min(), q.max())
+
+    ax2 = ax.twinx()
+    ax2.set_ylim(ax.get_ylim()[0] * MEV_TO_CM1, ax.get_ylim()[1] * MEV_TO_CM1)
+    ax2.set_ylabel("Wavenumber, cm$^{-1}$")
+
+    ax.grid(alpha=0.2)
     fig.tight_layout()
     return fig

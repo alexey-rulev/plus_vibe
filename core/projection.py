@@ -1,121 +1,67 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from typing import Tuple
+
 import numpy as np
-from typing import Dict, List, Tuple
+from ase import Atoms
 
-def atoms_to_arrays(atoms: List[dict]):
-    """Return fractional coords, symbols, and masses as arrays."""
-    frac = np.array([a.get("frac", a.get("coordinates")) for a in atoms], dtype=float)
-    sym = np.array([a.get("symbol","X") for a in atoms])
-    mass = np.array([float(a.get("mass", 0.0)) for a in atoms], dtype=float)
-    return frac, sym, mass
 
-def frac_to_cart(frac: np.ndarray, lattice: np.ndarray) -> np.ndarray:
-    """Convert fractional to Cartesian using lattice rows a,b,c (Angstrom)."""
-    return frac @ lattice  # row-vector convention
+def _wrap_fractional(dfrac: np.ndarray) -> np.ndarray:
+    return (dfrac + 0.5) % 1.0 - 0.5
 
-def cart_to_frac(cart: np.ndarray, lattice: np.ndarray) -> np.ndarray:
-    return cart @ np.linalg.inv(lattice)
 
-@dataclass
-class ProjectionSettings:
-    exclude_atom_index: int = -1
-    mass_weight: bool = True
-    normalize: bool = True
+def perp_vec_T_to_line_IF(I_atoms: Atoms, F_atoms: Atoms, T_atoms: Atoms) -> np.ndarray:
+    if not (len(I_atoms) == len(F_atoms) == len(T_atoms)):
+        raise ValueError("All structures must contain the same number of atoms")
 
-def infer_supercell_mapping(uc_frac: np.ndarray, uc_sym: np.ndarray, sc_atoms: List[dict], tol=1e-3):
-    sc_frac, sc_sym, sc_mass = atoms_to_arrays(sc_atoms)
-    n_uc = len(uc_frac)
+    cell = np.array(I_atoms.get_cell(), dtype=float)
+    if not (np.allclose(cell, F_atoms.get_cell(), atol=1e-6) and np.allclose(cell, T_atoms.get_cell(), atol=1e-6)):
+        raise ValueError("Initial, final, and TS structures must share identical lattice vectors")
 
-    sym_to_indices = {}
-    for i, s in enumerate(sc_sym):
-        sym_to_indices.setdefault(s, []).append(i)
+    frac_I = I_atoms.get_scaled_positions()
+    frac_F = F_atoms.get_scaled_positions()
+    frac_T = T_atoms.get_scaled_positions()
 
-    mapping: Dict[int, List[Tuple[int, np.ndarray]]] = {}
-    for j in range(n_uc):
-        s = uc_sym[j]
-        cand = sym_to_indices.get(s, [])
-        found = []
-        for i in cand:
-            df = sc_frac[i] - uc_frac[j]
-            R = np.round(df)
-            dwrap = df - R
-            if np.max(np.abs(dwrap)) < tol:
-                found.append((i, R.astype(int)))
-        if not found:
-            for i in cand:
-                df = sc_frac[i] - uc_frac[j]
-                R = np.round(df)
-                dwrap = df - R
-                if np.max(np.abs(dwrap)) < 5*tol:
-                    found.append((i, R.astype(int)))
-                    break
-        if not found:
-            return None
-        mapping[j] = found
-    return mapping
+    dfrac_IF = _wrap_fractional(frac_F - frac_I)
+    dfrac_IT = _wrap_fractional(frac_T - frac_I)
 
-def build_periodic_displacement_q(dr_sc_cart: np.ndarray,
-                                  mapping: Dict[int, List[Tuple[int, np.ndarray]]],
-                                  uc_lattice: np.ndarray,
-                                  qpoints_frac):
-    """
-    Construct u_j(q) = (1/sqrt(Nimg)) * sum_over_images dr_{j,R} * exp(-i 2pi qfrac dot Rint)
-    where Rint is the integer lattice vector (Ra,Rb,Rc) for each image.
-    Returns array of shape [nq, n_uc, 3] (complex128).
-    """
-    nq = len(qpoints_frac)
-    n_uc = len(mapping.keys())
-    u_q = np.zeros((nq, n_uc, 3), dtype=np.complex128)
+    dcart_IF = dfrac_IF @ cell
+    dcart_IT = dfrac_IT @ cell
 
-    for j in range(n_uc):
-        imgs = mapping[j]
-        Nimg = max(1, len(imgs))
+    a = dcart_IF.reshape(-1)
+    w = dcart_IT.reshape(-1)
+    denom = np.dot(a, a)
+    if denom == 0.0:
+        raise ValueError("Initial and final configurations coincide; direction undefined")
 
-        Rint = np.array([R for (_, R) in imgs], dtype=int)
-        dr_arr = np.array([dr_sc_cart[i] for (i, _) in imgs], dtype=float)
+    lam = np.dot(w, a) / denom
+    v_flat = lam * a - w
+    return v_flat.reshape(dcart_IT.shape)
 
-        for iq in range(nq):
-            qfrac = np.array(qpoints_frac[iq], dtype=float)
-            phases = np.exp(-1j * 2*np.pi * (Rint @ qfrac))
-            contrib = (phases[:, None] * dr_arr).sum(axis=0) / np.sqrt(Nimg)
-            u_q[iq, j, :] = contrib
-    return u_q
 
-def project_onto_modes(u_q: np.ndarray, uc_ph: dict, uc_meta: dict,
-                       uc_mass: np.ndarray, settings: ProjectionSettings):
-    """
-    u_q: [nq, n_uc, 3] complex periodic displacement per atom
-    uc_ph: dict with frequencies [nq, nbranches] and eigenvectors [nq][b][natoms][3]
-    Returns A: [nq, nbranches] projection amplitudes.
-    """
-    nq = len(uc_ph["qpoints"])
-    nbranches = uc_ph["nbranches"]
-    nat = u_q.shape[1]
-    ex = settings.exclude_atom_index if settings.exclude_atom_index >= 0 else (nat-1)
+def trim_structures(initial: Atoms, ts: Atoms, final: Atoms, drop_index: int) -> Tuple[Atoms, Atoms, Atoms]:
+    from .structures import drop_atom
 
-    A = np.zeros((nq, nbranches), dtype=float)
+    return drop_atom(initial, drop_index), drop_atom(ts, drop_index), drop_atom(final, drop_index)
 
-    if settings.normalize:
-        mask = np.ones(nat, dtype=bool)
-        if 0 <= ex < nat:
-            mask[ex] = False
-        if settings.mass_weight:
-            norms = np.linalg.norm((np.sqrt(uc_mass[mask])[:,None] * u_q[:,mask,:]), axis=(1,2)) + 1e-12
-        else:
-            norms = np.linalg.norm(u_q[:,mask,:], axis=(1,2)) + 1e-12
-    else:
-        norms = np.ones(nq, dtype=float)
 
+def compute_projection_modulus(supercell_modes: np.ndarray, dx_cart: np.ndarray,
+                               masses: np.ndarray | None = None,
+                               mass_weight: bool = False,
+                               center: bool = True) -> np.ndarray:
+    dx = np.asarray(dx_cart, dtype=float)
+    if center:
+        dx = dx - dx.mean(axis=0, keepdims=True)
+    if mass_weight and masses is not None:
+        factors = 1.0 / np.sqrt(np.asarray(masses, dtype=float))[:, None]
+        dx = dx * factors
+
+    dx_flat = dx.reshape(-1)
+    nq, nbranches, _, _ = supercell_modes.shape
+    projections = np.empty((nq, nbranches), dtype=float)
     for iq in range(nq):
         for ib in range(nbranches):
-            vecs = uc_ph["eigenvectors"][iq][ib]
-            accum = 0+0j
-            for j in range(nat):
-                if j == ex:
-                    continue
-                e_j = np.array(vecs[j], dtype=np.complex128)
-                u_j = u_q[iq, j, :]
-                w = np.sqrt(uc_mass[j]) if settings.mass_weight else 1.0
-                accum += w * np.vdot(e_j, u_j)
-            A[iq, ib] = np.abs(accum) / norms[iq]
-    return A
+            eig_flat = supercell_modes[iq, ib].reshape(-1)
+            proj = np.vdot(eig_flat, dx_flat)
+            projections[iq, ib] = np.abs(proj)
+    return projections

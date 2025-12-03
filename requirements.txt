@@ -3,3 +3,6 @@ numpy>=1.24
 pyyaml>=6.0.1
 matplotlib>=3.8
 scipy>=1.10
+ase>=3.22
+plotly>=5.18
+phonopy>=2.21
