@@ -18,6 +18,7 @@ from core.supercell import (
     reorder_modes,
 )
 from core.plotting import plot_bands_with_projection
+import traceback
 from core.phonopy_runner import (
     build_band_from_phonopy_files,
     DEFAULT_QPATH_TEXT,
@@ -26,6 +27,8 @@ from visualizer.viz import (
     make_phonon_band_figure,
     build_supercell,
     make_mode_animation_html,
+    compute_mode_displacement,
+    make_poscar_with_displacements,
 )
 
 
@@ -111,16 +114,16 @@ if source_mode == "band.yaml":
 elif phonopy_yaml and force_constants:
     try:
         uc_payload = build_band_from_phonopy_files(
-            phonopy_yaml,
-            force_constants,
-            qpath_text,
-            points_per_segment,
+        phonopy_yaml,
+        force_constants,
+        qpath_text,
+        points_per_segment,
         )
     except Exception as exc:
         st.error(f"Failed to build band structure from phonopy inputs: {exc}")
+        st.error(traceback.format_exc())
 
-tab_proj, tab_viz = st.tabs(["Projection", "Visualizer"])
-
+projection_values = st.session_state.get("projection_values")
 
 def _ensure_uc_payload():
     if uc_payload is None:
@@ -130,7 +133,9 @@ def _ensure_uc_payload():
     return uc_payload
 
 
-with tab_proj:
+col_proj, col_viz = st.columns([1.05, 0.95], gap="large")
+
+with col_proj:
     st.subheader("Projected displacement onto phonon modes")
     if run_btn:
         required_files = []
@@ -239,12 +244,25 @@ with tab_proj:
                                 )
                                 st.pyplot(fig, clear_figure=True)
                                 st.success(f"Projection complete for repeats {reps}.")
+                                projection_values = projections
+                                st.session_state["projection_values"] = projections
     else:
         st.info("Configure inputs in the sidebar and press **Compute projection** to run the analysis.")
 
+    st.divider()
+    st.subheader("Unit-cell band structure")
+    if uc_payload is None:
+        if source_mode == "band.yaml":
+            st.info("Upload a band.yaml with eigenvectors to see the unit-cell band plot.")
+        else:
+            st.info("Upload phonopy.yaml + FORCE_CONSTANTS to build and display the band plot.")
+    else:
+        uc_ph, uc_meta = uc_payload
+        fig_band = make_phonon_band_figure(uc_ph, uc_meta)
+        st.plotly_chart(fig_band, use_container_width=True)
 
-with tab_viz:
-    st.subheader("Interactive unit-cell visualizer")
+with col_viz:
+    st.subheader("Mode animation controls")
     if uc_payload is None:
         if source_mode == "band.yaml":
             st.info("Upload a band.yaml with eigenvectors to enable the visualizer.")
@@ -252,46 +270,145 @@ with tab_viz:
             st.info("Upload phonopy.yaml + FORCE_CONSTANTS and define a q-path to enable the visualizer.")
     else:
         uc_ph, uc_meta = uc_payload
-        col_band, col_anim = st.columns([1.2, 1.0], gap="large")
-        with col_band:
-            fig_band = make_phonon_band_figure(uc_ph, uc_meta)
-            st.plotly_chart(fig_band, use_container_width=True)
+        st.caption("Animate a selected phonon mode (mass-weighted displacements, rendered with NGL.js).")
+        if not uc_ph.get("has_eigenvectors", False):
+            st.warning("This band.yaml lacks eigenvectors. Re-run Phonopy with eigenvectors enabled to animate modes.")
+        elif not uc_meta.get("atoms"):
+            st.warning("Atom list missing in band.yaml; cannot build geometry for animation.")
+        else:
+            col_sc, col_amp = st.columns(2)
+            with col_sc:
+                supercell_rep = st.slider("Supercell reps", 1, 3, 1, key="viz_supercell")
+            with col_amp:
+                amp = st.slider("Amplitude", 0.0, 10.0, 2.0, 0.1, key="viz_amp")
 
-        with col_anim:
-            st.caption("Animate a selected phonon mode (mass-weighted displacements, rendered with NGL.js).")
-            if not uc_ph.get("has_eigenvectors", False):
-                st.warning("This band.yaml lacks eigenvectors. Re-run Phonopy with eigenvectors enabled to animate modes.")
-            elif not uc_meta.get("atoms"):
-                st.warning("Atom list missing in band.yaml; cannot build geometry for animation.")
+            col_frames, col_fps = st.columns(2)
+            with col_frames:
+                frames = st.slider("Frames/period", 10, 60, 24, 2, key="viz_frames")
+            with col_fps:
+                fps = st.slider("FPS", 5, 60, 20, 1, key="viz_fps")
+
+            nq = len(uc_ph.get("qpoints", []))
+            nb = uc_ph.get("nbranches", 0)
+            entry_mode = st.radio("Index input", ["Sliders", "Keyboard"], horizontal=True, key="viz_entry")
+            if entry_mode == "Sliders":
+                col_q, col_b = st.columns(2)
+                with col_q:
+                    q_idx = st.slider("q index", 0, max(0, nq - 1), min(10, max(0, nq - 1)), key="viz_q")
+                with col_b:
+                    b_idx = st.slider("branch", 0, max(0, nb - 1), min(3, max(0, nb - 1)), key="viz_branch")
             else:
-                supercell_rep = st.slider("Supercell repetitions", 1, 3, 1, key="viz_supercell")
-                amp = st.slider("Animation amplitude (arb. units)", 0.0, 10.0, 2.0, 0.1, key="viz_amp")
-                frames = st.slider("Frames per period", 10, 60, 24, 2, key="viz_frames")
-                fps = st.slider("Playback FPS", 5, 60, 20, 1, key="viz_fps")
+                col_q, col_b = st.columns(2)
+                with col_q:
+                    q_idx = st.number_input("q index", min_value=0, max_value=max(0, nq - 1), value=min(10, max(0, nq - 1)), step=1)
+                with col_b:
+                    b_idx = st.number_input("branch", min_value=0, max_value=max(0, nb - 1), value=min(3, max(0, nb - 1)), step=1)
 
-                nq = len(uc_ph["qpoints"])
-                nb = uc_ph["nbranches"]
-                q_idx = st.slider("q-point index", 0, max(0, nq - 1), min(10, max(0, nq - 1)), key="viz_q")
-                b_idx = st.slider("Branch index", 0, max(0, nb - 1), min(3, max(0, nb - 1)), key="viz_branch")
+            qvecs_frac = uc_ph.get("qpoints_frac") or []
+            if qvecs_frac and 0 <= q_idx < len(qvecs_frac):
+                qvec_frac = np.array(qvecs_frac[q_idx], dtype=float)
+                q_info = f"**q-point index:** {q_idx}  \n**Fractional q-vector:** ({qvec_frac[0]:.6f}, {qvec_frac[1]:.6f}, {qvec_frac[2]:.6f})"
+                if uc_meta.get("lattice") is not None:
+                    lattice = np.asarray(uc_meta["lattice"], float)
+                    recip = 2 * np.pi * np.linalg.inv(lattice).T
+                    qvec_cart = qvec_frac @ recip
+                    q_info += f"  \n**Cartesian q-vector:** ({qvec_cart[0]:.6f}, {qvec_cart[1]:.6f}, {qvec_cart[2]:.6f}) Å⁻¹"
+                freq_val = None
+                freqs = uc_ph.get("frequencies")
+                if freqs is not None:
+                    try:
+                        freq_arr = np.asarray(freqs, dtype=float)
+                        if (
+                            q_idx < freq_arr.shape[0]
+                            and b_idx < freq_arr.shape[1]
+                        ):
+                            freq_val = float(freq_arr[q_idx, b_idx])
+                    except Exception:
+                        freq_val = None
+                if freq_val is not None:
+                    q_info += f"  \n**Frequency:** {freq_val:.4f} THz"
+                else:
+                    q_info += "  \n*Frequency unavailable for this mode.*"
+                proj_len = None
+                if projection_values is not None:
+                    try:
+                        if (
+                            q_idx < projection_values.shape[0]
+                            and b_idx < projection_values.shape[1]
+                        ):
+                            proj_len = float(projection_values[q_idx, b_idx])
+                    except Exception:
+                        proj_len = None
+                if proj_len is not None:
+                    q_info += f"  \n**Projection length:** {proj_len:.4f}"
+                else:
+                    q_info += "  \n*Run the projection workflow to populate projection lengths.*"
+                st.info(q_info)
+            else:
+                qvec_frac = np.zeros(3, dtype=float)
 
-                R, species, lattice = build_supercell(
+            try:
+                supercell_atoms = build_supercell(
                     uc_meta,
-                    reps=(supercell_rep, supercell_rep, supercell_rep)
+                    reps=(supercell_rep, supercell_rep, supercell_rep),
                 )
-                base_masses = [a.get("mass", 1.0) or 1.0 for a in uc_meta["atoms"]]
-                masses = base_masses * (supercell_rep ** 3)
+            except Exception as exc:
+                st.error(f"Failed to build supercell for animation: {exc}")
+                supercell_atoms = None
+
+            if supercell_atoms is not None:
+                unit_cell_lattice = np.asarray(uc_meta["lattice"], float) if uc_meta.get("lattice") is not None else None
                 try:
-                    html = make_mode_animation_html(
-                        R=R,
-                        species=species,
-                        lattice=lattice,
+                    displacement = compute_mode_displacement(
+                        atoms=supercell_atoms,
                         eigenvectors=uc_ph["eigenvectors"][q_idx][b_idx],
-                        qvec=uc_ph["qpoints_frac"][q_idx],
-                        masses=masses,
+                        qvec=qvec_frac,
+                        amp=amp,
+                        unit_cell_lattice=unit_cell_lattice,
+                    )
+                    html = make_mode_animation_html(
+                        atoms=supercell_atoms,
+                        eigenvectors=uc_ph["eigenvectors"][q_idx][b_idx],
+                        qvec=qvec_frac,
                         amp=amp,
                         steps=frames,
+                        height_px=520,
                         fps=fps,
+                        unit_cell_lattice=unit_cell_lattice,
                     )
                     st.components.v1.html(html, height=540, scrolling=False)
+                    st.caption("Mass-weighted animation (1/√m scaling) with dimensionless amplitude factor.")
+
+                    poscar_comment_pos = (
+                        f"Phonon Visualizer q={q_idx} branch={b_idx} supercell={supercell_rep} amp={amp}"
+                    )
+                    poscar_comment_neg = (
+                        f"Phonon Visualizer q={q_idx} branch={b_idx} supercell={supercell_rep} amp={-amp}"
+                    )
+                    poscar_data_pos = make_poscar_with_displacements(
+                        atoms=supercell_atoms,
+                        disp_cart=displacement,
+                        comment=poscar_comment_pos,
+                    )
+                    poscar_data_neg = make_poscar_with_displacements(
+                        atoms=supercell_atoms,
+                        disp_cart=-displacement,
+                        comment=poscar_comment_neg,
+                    )
+                    col_pos, col_neg = st.columns(2)
+                    with col_pos:
+                        st.download_button(
+                            "💾 Download displaced configuration (+)",
+                            data=poscar_data_pos,
+                            file_name=f"phonon_mode_q{q_idx}_b{b_idx}_sc{supercell_rep}.vasp",
+                            mime="text/plain",
+                        )
+                    with col_neg:
+                        st.download_button(
+                            "💾 Download displaced configuration (-)",
+                            data=poscar_data_neg,
+                            file_name=f"phonon_mode_q{q_idx}_b{b_idx}_sc{supercell_rep}_neg.vasp",
+                            mime="text/plain",
+                        )
                 except Exception as exc:
                     st.error(f"Failed to animate mode: {exc}")

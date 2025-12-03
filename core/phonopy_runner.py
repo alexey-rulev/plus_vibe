@@ -5,6 +5,7 @@ from typing import List, Sequence, Tuple
 
 import numpy as np
 import phonopy
+from phonopy.phonon.band_structure import get_band_qpoints_and_path_connections
 
 DEFAULT_QPATH_TEXT = """G 0 0 0
 X 0.5 0 0
@@ -23,8 +24,9 @@ def _write_temp_file(upload, suffix: str) -> str:
     return tmp.name
 
 
-def _parse_special_points(text: str) -> List[Tuple[str, np.ndarray]]:
-    points: List[Tuple[str, np.ndarray]] = []
+def _parse_special_points(text: str) -> Tuple[List[str], List[np.ndarray]]:
+    labels: List[str] = []
+    points: List[np.ndarray] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -37,23 +39,11 @@ def _parse_special_points(text: str) -> List[Tuple[str, np.ndarray]]:
             coords = np.array([float(parts[1]), float(parts[2]), float(parts[3])], dtype=float)
         except ValueError as exc:
             raise ValueError(f"Failed to parse coordinates in line '{raw_line}': {exc}") from exc
-        points.append((label, coords))
+        labels.append(label)
+        points.append(coords)
     if len(points) < 2:
         raise ValueError("Provide at least two q-points to define a path")
-    return points
-
-
-def _build_band_paths(points: Sequence[Tuple[str, np.ndarray]], npts: int) -> List[List[np.ndarray]]:
-    if npts < 2:
-        raise ValueError("Points per segment must be >= 2")
-    paths: List[List[np.ndarray]] = []
-    for (label_a, qa), (label_b, qb) in zip(points[:-1], points[1:]):
-        band = []
-        for i in range(npts):
-            frac = i / (npts - 1)
-            band.append(qa + (qb - qa) * frac)
-        paths.append(band)
-    return paths
+    return labels, points
 
 
 def _primitive_meta(primitive) -> Tuple[List[dict], np.ndarray]:
@@ -70,12 +60,11 @@ def _primitive_meta(primitive) -> Tuple[List[dict], np.ndarray]:
     return atoms, lattice
 
 
-def _flatten_band_dict(band_dict: dict, special_points: Sequence[Tuple[str, np.ndarray]]):
+def _flatten_band_dict(band_dict: dict):
     qpoints_frac = []
     distances = []
     freq_rows = []
     eig_rows = [] if "eigenvectors" in band_dict else None
-    labels = {}
 
     global_idx = -1
     for path_idx, qpath in enumerate(band_dict["qpoints"]):
@@ -89,33 +78,32 @@ def _flatten_band_dict(band_dict: dict, special_points: Sequence[Tuple[str, np.n
             if eig_rows is not None:
                 eig_rows.append(eig_path[path_idx][iq])
             global_idx += 1
-            if path_idx == 0 and iq == 0:
-                labels[global_idx] = special_points[0][0]
-        labels[global_idx] = special_points[path_idx + 1][0]
 
     frequencies = np.array(freq_rows, dtype=float)
     eigenvectors = None
     if eig_rows is not None:
         eigenvectors = np.asarray(eig_rows, dtype=np.complex128)
-    return qpoints_frac, distances, frequencies, eigenvectors, labels
+    return qpoints_frac, distances, frequencies, eigenvectors
 
 
 def build_band_from_phonopy_files(phonopy_yaml, force_constants, qpath_text: str, points_per_segment: int):
-    points = _parse_special_points(qpath_text)
-    paths = _build_band_paths(points, points_per_segment)
-
+    labels, points = _parse_special_points(qpath_text)
+    #paths = _build_band_paths(points, points_per_segment)
+    print(points)
+    qpoints, connections = get_band_qpoints_and_path_connections([points], npoints=points_per_segment)
+    print(qpoints)
     yaml_path = _write_temp_file(phonopy_yaml, suffix=".yaml")
     fc_path = _write_temp_file(force_constants, suffix=".dat")
     try:
         phonon = phonopy.load(phonopy_yaml=yaml_path, force_constants_filename=fc_path)
-        phonon.run_band_structure(paths, with_eigenvectors=True)
+        phonon.run_band_structure(qpoints, path_connections=connections, with_eigenvectors=True)
         band = phonon.get_band_structure_dict()
     finally:
         for tmp_path in (yaml_path, fc_path):
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-    qpoints_frac, distances, frequencies, eigenvectors, labels = _flatten_band_dict(band, points)
+    qpoints_frac, distances, frequencies, eigenvectors = _flatten_band_dict(band)
     atoms_meta, lattice = _primitive_meta(phonon.primitive)
 
     if eigenvectors is not None:

@@ -11,7 +11,7 @@ from ase.io import write
 def make_phonon_band_figure(phonon, meta=None):
     """
     Plot phonon bands vs k-point INDEX (0..N-1), not distance.
-    Labels in meta['labels'] are placed at their q-point indices.
+    Labels in meta['labels'] (dict or list) are placed at their q-point indices.
     """
     y = np.asarray(phonon["frequencies"], float)  # [nq, nb]
     nq, nb = y.shape
@@ -21,17 +21,32 @@ def make_phonon_band_figure(phonon, meta=None):
     for b in range(nb):
         fig.add_trace(go.Scatter(x=x, y=y[:, b], mode="lines", showlegend=False))
 
-    labels = (meta or {}).get("labels", {})
-    if labels:
-        idxs = sorted(int(i) for i in labels.keys() if 0 <= int(i) < nq)
-        tickvals, ticktext = [], []
-        for i in idxs:
-            lab = str(labels[i]).replace("GAMMA", "Γ").replace("\\Gamma", "Γ").replace("$\\Gamma$", "Γ")
-            tickvals.append(i); ticktext.append(lab)
+    labels_raw = (meta or {}).get("labels")
+    tickvals, ticktext = [], []
+    if isinstance(labels_raw, dict):
+        label_items = sorted(
+            (int(i), labels_raw[i])
+            for i in labels_raw.keys()
+            if 0 <= int(i) < nq
+        )
+    elif isinstance(labels_raw, (list, tuple)):
+        label_items = [
+            (idx, lab)
+            for idx, lab in enumerate(labels_raw)
+            if 0 <= idx < nq and isinstance(lab, str) and lab.strip()
+        ]
+    else:
+        label_items = []
+
+    if label_items:
+        for idx, lab in label_items:
+            clean = str(lab).replace("GAMMA", "Γ").replace("\\Gamma", "Γ").replace("$\\Gamma$", "Γ")
+            tickvals.append(idx)
+            ticktext.append(clean)
         fig.update_xaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext, title_text="k-point index")
         # Optional: faint vertical separators at labeled points
-        for i in idxs:
-            fig.add_vline(x=i, line_width=1, line_dash="dot")
+        for idx in tickvals:
+            fig.add_vline(x=idx, line_width=1, line_dash="dot")
     else:
         fig.update_xaxes(title_text="k-point index")
 
