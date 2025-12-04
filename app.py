@@ -8,7 +8,7 @@ from core.projection import (
     compute_projection_modulus,
 )
 from core.structures import (
-    read_qe_structure,
+    read_structure,
     build_supercell_atoms,
 )
 from core.supercell import (
@@ -46,6 +46,7 @@ with st.sidebar:
     uc_file = None
     phonopy_yaml = None
     force_constants = None
+    force_sets = None
     qpath_text = DEFAULT_QPATH_TEXT
     points_per_segment = 40
 
@@ -56,7 +57,9 @@ with st.sidebar:
         )
     else:
         phonopy_yaml = st.file_uploader("phonopy.yaml", type=["yaml", "yml"])
-        force_constants = st.file_uploader("FORCE_CONSTANTS")
+        st.caption("Provide either FORCE_CONSTANTS or FORCE_SETS from Phonopy.")
+        force_constants = st.file_uploader("FORCE_CONSTANTS (optional)")
+        force_sets = st.file_uploader("FORCE_SETS (optional)")
         qpath_text = st.text_area(
             "Special q-points (LABEL qx qy qz)",
             value=DEFAULT_QPATH_TEXT,
@@ -80,7 +83,7 @@ with st.sidebar:
         value=-1,
         help="Index removed from all structures before building dX",
     )
-    mass_weight = st.checkbox("Mass-weight dX", value=False)
+    mass_weight = True
     center_dx = st.checkbox("Remove center-of-mass drift", value=True)
     amp_scale = st.slider("Marker size scale", 50.0, 2000.0, 400.0, step=10.0)
     map_tol = st.number_input("Mapping tolerance (fractional)", min_value=1e-5, max_value=5e-2, value=1e-3, format="%.1e")
@@ -99,7 +102,7 @@ with st.sidebar:
     run_btn = st.button("Compute projection")
 
 st.caption(
-    "Provide either a precomputed band.yaml or phonopy.yaml+FORCE_CONSTANTS to build the unit-cell modes, "
+    "Provide either a precomputed band.yaml or phonopy.yaml plus FORCE_CONSTANTS/FORCE_SETS to build the unit-cell modes, "
     "and three matching structures (.in) for the I/TS/F images. The TS displacement is taken as the perpendicular from the TS to the I→F line in 3N space."
 )
 
@@ -111,13 +114,14 @@ if source_mode == "band.yaml":
             uc_payload = load_band_yaml_from_bytes(uc_bytes)
         except Exception as exc:
             st.error(f"Failed to parse unit-cell band.yaml: {exc}")
-elif phonopy_yaml and force_constants:
+elif phonopy_yaml and (force_constants or force_sets):
     try:
         uc_payload = build_band_from_phonopy_files(
-        phonopy_yaml,
-        force_constants,
-        qpath_text,
-        points_per_segment,
+            phonopy_yaml,
+            force_constants=force_constants,
+            force_sets=force_sets,
+            qpath_text=qpath_text,
+            points_per_segment=points_per_segment,
         )
     except Exception as exc:
         st.error(f"Failed to build band structure from phonopy inputs: {exc}")
@@ -129,7 +133,7 @@ def _ensure_uc_payload():
     if uc_payload is None:
         if source_mode == "band.yaml":
             raise ValueError("Upload a unit-cell band.yaml first")
-        raise ValueError("Upload phonopy.yaml and FORCE_CONSTANTS, then define a q-path")
+        raise ValueError("Upload phonopy.yaml plus FORCE_CONSTANTS or FORCE_SETS, then define a q-path")
     return uc_payload
 
 
@@ -143,13 +147,14 @@ with col_proj:
             required_files.append((uc_file, "band.yaml"))
         else:
             required_files.append((phonopy_yaml, "phonopy.yaml"))
-            required_files.append((force_constants, "FORCE_CONSTANTS"))
         required_files.extend([
             (init_file, "initial structure"),
             (ts_file, "transition-state structure"),
             (final_file, "final structure"),
         ])
         missing = [name for file_obj, name in required_files if not file_obj]
+        if source_mode != "band.yaml" and not (force_constants or force_sets):
+            missing.append("FORCE_CONSTANTS or FORCE_SETS")
         if missing:
             st.error("Missing required inputs: " + ", ".join(missing))
         else:
@@ -166,9 +171,9 @@ with col_proj:
             structures = None
             if uc_ph is not None:
                 try:
-                    init_atoms = read_qe_structure(init_file)
-                    ts_atoms = read_qe_structure(ts_file)
-                    final_atoms = read_qe_structure(final_file)
+                    init_atoms = read_structure(init_file)
+                    ts_atoms = read_structure(ts_file)
+                    final_atoms = read_structure(final_file)
                     structures = (init_atoms, ts_atoms, final_atoms)
                 except Exception as exc:
                     st.error(f"Failed to read structures: {exc}")
@@ -254,7 +259,7 @@ with col_proj:
         if source_mode == "band.yaml":
             st.info("Upload a band.yaml with eigenvectors to see the unit-cell band plot.")
         else:
-            st.info("Upload phonopy.yaml + FORCE_CONSTANTS to build and display the band plot.")
+            st.info("Upload phonopy.yaml plus FORCE_CONSTANTS or FORCE_SETS to build and display the band plot.")
     else:
         uc_ph, uc_meta = uc_payload
         fig_band = make_phonon_band_figure(uc_ph, uc_meta)
@@ -266,7 +271,7 @@ with col_viz:
         if source_mode == "band.yaml":
             st.info("Upload a band.yaml with eigenvectors to enable the visualizer.")
         else:
-            st.info("Upload phonopy.yaml + FORCE_CONSTANTS and define a q-path to enable the visualizer.")
+            st.info("Upload phonopy.yaml plus FORCE_CONSTANTS or FORCE_SETS and define a q-path to enable the visualizer.")
     else:
         uc_ph, uc_meta = uc_payload
         st.caption("Animate a selected phonon mode (mass-weighted displacements, rendered with NGL.js).")

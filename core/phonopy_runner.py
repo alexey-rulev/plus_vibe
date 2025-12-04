@@ -86,19 +86,35 @@ def _flatten_band_dict(band_dict: dict):
     return qpoints_frac, distances, frequencies, eigenvectors
 
 
-def build_band_from_phonopy_files(phonopy_yaml, force_constants, qpath_text: str, points_per_segment: int):
+def build_band_from_phonopy_files(
+    phonopy_yaml,
+    force_constants=None,
+    force_sets=None,
+    qpath_text: str = DEFAULT_QPATH_TEXT,
+    points_per_segment: int = 40,
+):
+    if phonopy_yaml is None:
+        raise ValueError("phonopy.yaml upload is required")
+    if force_constants is None and force_sets is None:
+        raise ValueError("Provide either FORCE_CONSTANTS or FORCE_SETS to build the band structure")
     labels, points = _parse_special_points(qpath_text)
     #paths = _build_band_paths(points, points_per_segment)
     qpoints, connections = get_band_qpoints_and_path_connections([points], npoints=points_per_segment)
     yaml_path = _write_temp_file(phonopy_yaml, suffix=".yaml")
-    fc_path = _write_temp_file(force_constants, suffix=".dat")
+    fc_path = _write_temp_file(force_constants, suffix=".dat") if force_constants else None
+    fs_path = _write_temp_file(force_sets, suffix=".dat") if force_sets and not force_constants else None
     try:
-        phonon = phonopy.load(phonopy_yaml=yaml_path, force_constants_filename=fc_path)
+        load_kwargs = {"phonopy_yaml": yaml_path}
+        if fc_path is not None:
+            load_kwargs["force_constants_filename"] = fc_path
+        else:
+            load_kwargs["force_sets_filename"] = fs_path
+        phonon = phonopy.load(**load_kwargs)
         phonon.run_band_structure(qpoints, path_connections=connections, with_eigenvectors=True)
         band = phonon.get_band_structure_dict()
     finally:
-        for tmp_path in (yaml_path, fc_path):
-            if os.path.exists(tmp_path):
+        for tmp_path in (yaml_path, fc_path, fs_path):
+            if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
     qpoints_frac, distances, frequencies, eigenvectors = _flatten_band_dict(band)
