@@ -89,9 +89,7 @@ def _flatten_band_dict(band_dict: dict):
 def build_band_from_phonopy_files(phonopy_yaml, force_constants, qpath_text: str, points_per_segment: int):
     labels, points = _parse_special_points(qpath_text)
     #paths = _build_band_paths(points, points_per_segment)
-    print(points)
     qpoints, connections = get_band_qpoints_and_path_connections([points], npoints=points_per_segment)
-    print(qpoints)
     yaml_path = _write_temp_file(phonopy_yaml, suffix=".yaml")
     fc_path = _write_temp_file(force_constants, suffix=".dat")
     try:

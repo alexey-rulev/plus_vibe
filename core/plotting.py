@@ -24,9 +24,7 @@ def _sizes_from_projections(proj: np.ndarray, min_size: float = 0.0, max_size: f
 def plot_bands_with_projection(uc_ph: dict, projections: np.ndarray, amp_scale: float = 200.0, square: bool = False):
     freqs_thz = np.asarray(uc_ph["frequencies"], dtype=float)
     freqs_mev = freqs_thz * THZ_TO_MEV
-    print(uc_ph["qpoints"])
     q = np.asarray(uc_ph["qpoints"], dtype=float)
-    print(q)
     qfrac = uc_ph.get("qpoints_frac", [])
 
     proj_vals = np.asarray(projections, dtype=float)

@@ -212,7 +212,6 @@ with col_proj:
                         else:
                             unit_eig = np.asarray(uc_ph["eigenvectors"], dtype=np.complex128)
                             qfrac = np.asarray(uc_ph["qpoints_frac"], dtype=float)
-                            print(unit_eig.shape, qfrac.shape, reps)
                             try:
                                 super_modes = expand_unit_cell_modes(unit_eig, qfrac, reps)
                             except Exception as exc:
