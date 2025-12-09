@@ -20,9 +20,7 @@ streamlit run app.py
 
 ## Inputs
 
-The program takes for input:
-
-- phonon data of a __unit cell__ (or ) calculated with phonopy, either:
+- phonon data of a __unit cell__ calculated with phonopy, either:
     - bands.yaml file
     - phonopy.yaml + FORCE_SETS
     - phonopy.yaml + FORCE_CONSTANTS
