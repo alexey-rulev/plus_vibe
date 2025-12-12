@@ -1,6 +1,6 @@
 This is a work in progress.
 
-For more details, see: https://doi.org/10.1002/advs.202507261
+For more details, see: https://doi.org/10.26434/chemrxiv-2025-kf878 or https://doi.org/10.1002/advs.202507261
 
 The app plots projections on band structure; projection DOS is only implemented in ts.ipynb
 
