@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 import streamlit as st
 
@@ -250,8 +252,35 @@ with col_proj:
                                 st.success(f"Projection complete for repeats {reps}.")
                                 projection_values = projections
                                 st.session_state["projection_values"] = projections
+                                try:
+                                    freq_arr = np.asarray(uc_ph.get("frequencies"), dtype=float)
+                                    if freq_arr.shape[:2] != projections.shape:
+                                        raise ValueError("Frequency array does not align with projection matrix")
+                                    k_idx = np.arange(projections.shape[0], dtype=float)[:, None]
+                                    table = np.concatenate([k_idx, freq_arr, projections], axis=1)
+                                    headers = ["k_index"]
+                                    headers += [f"freq_{i}" for i in range(projections.shape[1])]
+                                    headers += [f"proj_{i}" for i in range(projections.shape[1])]
+                                    buf = io.StringIO()
+                                    buf.write(",".join(headers) + "\n")
+                                    np.savetxt(buf, table, delimiter=",", fmt="%.10f")
+                                    csv_payload = buf.getvalue()
+                                    st.session_state["projection_export"] = csv_payload
+                                    projection_export = csv_payload
+                                except Exception as exc:
+                                    st.warning(f"Projection table export unavailable: {exc}")
     else:
         st.info("Configure inputs in the sidebar and press **Compute projection** to run the analysis.")
+
+    export_payload = st.session_state.get("projection_export")
+    if export_payload:
+        st.download_button(
+            "💾 Download projection table",
+            data=export_payload,
+            file_name="projection_table.csv",
+            mime="text/csv",
+            key="download_projection_table",
+        )
 
     st.divider()
     st.subheader("Unit-cell band structure")
