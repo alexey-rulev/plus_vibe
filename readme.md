@@ -5,7 +5,9 @@ For more details, see: https://doi.org/10.26434/chemrxiv-2025-kf878 or https://d
 The app plots projections on band structure; projection DOS is only implemented in ts.ipynb
 
 The scheme below illustrates what does the script do:
-<img width="506" height="602" alt="scheme" src="https://github.com/user-attachments/assets/4552b847-0ba9-429b-9039-263c28dc03c6" />
+
+<img width="300" height="360" alt="scheme" src="https://github.com/user-attachments/assets/4552b847-0ba9-429b-9039-263c28dc03c6" />
+
 For the case of proton conductors, script calculates vector that describes how all atoms except the proton displace toward transition state; then it projects all eigenvectors of different phonon modes on this vector and plots their magnitude. Length of projection corresponds to how much does vibration along this phonon mode push system towards transition state, i.e., how much does this phonon mode make proton hop easier.
 
 # Phonon Projection App
